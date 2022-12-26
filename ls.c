@@ -80,7 +80,8 @@ __FBSDID("$FreeBSD$");
 #include <sys/param.h>
 #include <get_compat.h>
 #include <sys/sysctl.h>
-#include <System/sys/fsctl.h>
+// Nothing important seems to happen when I remove this. I don't know why.
+// #include <System/sys/fsctl.h>
 #endif /* __APPLE__ */
 #include "ls.h"
 #include "extern.h"
@@ -115,11 +116,13 @@ static void	 traverse(int, char **, int);
 
 #define	COLOR_OPT	(CHAR_MAX + 1)
 
+#define DIRFIRST_OPT  -850 // BSD
 static const struct option long_opts[] =
 {
 #ifdef COLORLS
         {"color",       optional_argument,      NULL, COLOR_OPT},
 #endif
+        {"group-directories-first", no_argument, NULL, DIRFIRST_OPT},
         {NULL,          no_argument,            NULL, 0}
 };
 
@@ -152,6 +155,7 @@ static int f_nosort;		/* don't sort output */
        int f_octal_escape;	/* like f_octal but use C escapes if possible */
 static int f_recursive;		/* ls subdirectories also */
 static int f_reversesort;	/* reverse whatever sort is used */
+static int f_sortdir1st;	/* sort directories first */
        int f_samesort;		/* sort time and name in same direction */
        int f_sectime;		/* print full time information */
 static int f_singlecol;		/* use single column output */
@@ -314,6 +318,7 @@ main(int argc, char *argv[])
 	    "+1ABCD:FGHILPRSTUWXZabcdfghiklmnopqrstuwxy,", long_opts,
 #endif
 	    NULL)) != -1) {
+
 		switch (ch) {
 		/*
 		 * The -1, -C, -x and -l options all override each other so
@@ -549,6 +554,9 @@ main(int argc, char *argv[])
 				    optarg);
 			break;
 #endif
+		case DIRFIRST_OPT:
+			f_sortdir1st = 1;
+			break;
 		default:
 		case '?':
 			usage();
@@ -1220,7 +1228,9 @@ static int
 mastercmp(const FTSENT **a, const FTSENT **b)
 {
 	int a_info, b_info;
+	int samedottedness;
 
+	// Try to get file entry info. On error --> treat as equal list order.
 	a_info = (*a)->fts_info;
 	if (a_info == FTS_ERR)
 		return (0);
@@ -1228,6 +1238,7 @@ mastercmp(const FTSENT **a, const FTSENT **b)
 	if (b_info == FTS_ERR)
 		return (0);
 
+	// FTS_NS indicates no stat(2) info, just sort by name
 	if (a_info == FTS_NS || b_info == FTS_NS)
 		return (namecmp(*a, *b));
 
@@ -1238,5 +1249,26 @@ mastercmp(const FTSENT **a, const FTSENT **b)
 		if (b_info == FTS_D)
 			return (-1);
 	}
+
+	// ADDED: Sort directories first
+	if (a_info == FTS_DOT && b_info != FTS_DOT) return -1;
+	if (a_info != FTS_DOT && b_info == FTS_DOT) return 1;
+
+	if      ((*a)->fts_name[0] != '.' && (*b)->fts_name[0] != '.')
+		samedottedness = 1;
+	else if ((*a)->fts_name[0] == '.' && (*b)->fts_name[0] == '.')
+		samedottedness = 1;
+	else
+		samedottedness = 0;
+
+	if (f_sortdir1st) {
+		if (a_info == FTS_D && b_info != FTS_D && (samedottedness)) {
+			return (-1);
+		}
+		if (b_info == FTS_D && a_info != FTS_D && (samedottedness)) {
+			return (1);
+		}
+	}
+
 	return (sortfcn(*a, *b));
 }

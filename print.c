@@ -46,19 +46,21 @@ __FBSDID("$FreeBSD$");
 #include <sys/acl.h>
 #include <sys/xattr.h>
 #include <sys/types.h>
+#include <get_compat.h>
 #include <grp.h>
 #include <pwd.h>
 #include <TargetConditionals.h>
 #include <membership.h>
-#include <membershipPriv.h>
+// #include <membershipPriv.h>
 #include <uuid/uuid.h>
+int mbr_identifier_translate(int, uuid_t, size_t, int, void **, int *);
 #endif
 
 #include <err.h>
 #include <errno.h>
 #include <fts.h>
 #include <langinfo.h>
-#include <libutil.h>
+#include "import/libutil.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -284,11 +286,79 @@ uuid_to_name(uuid_t *uu)
 		goto errout;
 	}
 	
-	if (mbr_identifier_translate(ID_TYPE_UUID, *uu, sizeof(*uu), ID_TYPE_NAME, (void **) &recname, &type)) {
+	// if (mbr_identifier_translate(ID_TYPE_UUID, *uu, sizeof(*uu), ID_TYPE_NAME, (void **) &recname, &type)) {
+	//
+	// Weird license for the header file this is in, so we'll work around it.
+	//
+	// RETURN TYPE: No stdbool.h so probably an int.
+	//
+	// ARGUMENTS: All-caps are usually #define'd macros or enums, so compat
+	//     with int.  We know uu is a uuid_t. sizeof() --> size_t. All caps
+	//     --> int again. Explicit cast to void **. Address of an int is a
+	//     pointer-to-int type.
+	//
+	// Using int mbr_identifier_translate(int, uuid_t, size_t, int, void **, int *);
+	//
+	// Lastly, compiling complains about ID_TYPE_NAME, so that's probably not
+	// defined anywhere in free software. I tried just using ID_TYPE_USERNAME,
+	// and it just works... for user AND group names. Huh. Oh well ¯\_(ツ)_/¯
+
+	if (mbr_identifier_translate(ID_TYPE_UUID,
+	                             *uu,
+	                             sizeof(*uu),
+	                             ID_TYPE_USERNAME,
+	                             (void **) &recname,
+	                             &type)) {
 		goto errout;
 	}
 	
-	snprintf(name, MAXNAMETAG, "%s:%s", (type == MBR_REC_TYPE_USER ? "user" : "group"), recname);
+	// snprintf(name, MAXNAMETAG, "%s:%s", (type == MBR_REC_TYPE_USER ? "user" : "group"), recname);
+
+	// Weird license for the header file this is in, so we'll work around it.
+	// MBR_REC_TYPE_USER is not defined here unless we include the non-free
+	// header file, but it appears to have only a few options (looks like it's
+	// for ACL scopes). Let's try a few and see what happens.
+	//
+	// fprintf(stderr, "Assuming MBR_REC_TYPE_USER is 0\n");
+	// snprintf(name, MAXNAMETAG, "%s:%s", (type == 0 ? "user" : "group"), recname);
+	//
+	// fprintf(stderr, "Assuming MBR_REC_TYPE_USER is 1\n");
+	// snprintf(name, MAXNAMETAG, "%s:%s", (type == 1 ? "user" : "group"), recname);
+	//
+	// fprintf(stderr, "Assuming MBR_REC_TYPE_USER is 2\n");
+	// snprintf(name, MAXNAMETAG, "%s:%s", (type == 2 ? "user" : "group"), recname);
+	//
+	// RESULTS OF TESTING
+	//
+	//		 $ date > test.txt
+	//		 $ chmod +a "staff deny write" test.txt
+	//		 $ chmod +a "jlockert deny append" test.txt
+	//		 $ /bin/ls -le test.txt
+	//		 -rw-r--r--+ 1 jlockert  staff  29 Dec 26 04:14 test.txt
+	//		  0: user:jlockert deny append
+	//		  1: group:staff deny write
+	//		 $ ./ls -le test.txt
+	//		 -rw-r--r--+ 1 jlockert  staff  29 Dec 26 04:14 test.txt
+	//		  0: group:? deny append
+	//		  1: group: deny write
+	//		 $ ./ls -le test.txt
+	//		 -rw-r--r--+ 1 jlockert  staff  29 Dec 26 04:14 test.txt
+	//		  0: user:? deny append
+	//		  1: group: deny write
+	//		 $ ./ls -le test.txt
+	//		 -rw-r--r--+ 1 jlockert  staff  29 Dec 26 04:14 test.txt
+	//		  0: group:? deny append
+	//		  1: user: deny write
+	//
+	// RESULT:  Assuming MBR_REC_TYPE_USER is 1 correctly got the result that
+	//          the append denial is a user ACL and the write denial is a group
+	//          ACL. Moreover, when we assumed MBR_REC_TYPE_USER was 2, we
+	//          got user and group ACLs perfectly inverted. Safe to conclude:
+	//               MBR_REC_TYPE_USER  = 1
+	//               MBR_REC_TYPE_GROUP = 2
+
+	snprintf(name, MAXNAMETAG, "%s:%s", (type==1)?"user":"group", recname);
+
 	free(recname);
 	
 	return name;

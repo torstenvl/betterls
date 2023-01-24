@@ -45,6 +45,7 @@
 .Op Fl @ABCFGHILOPRSTUWabcdefghiklmnopqrstuvwxy1%\&,
 .Op Fl -color Ns = Ns Ar when
 .Op Fl -group-directories-first
+.Op Fl -group-dots-extra-first
 .Op Fl D Ar format
 .Op Ar
 .Sh DESCRIPTION
@@ -224,8 +225,10 @@ This option is not defined in
 .It Fl c
 Use time when file status was last changed for sorting or printing.
 .It Fl -group-directories-first
-Sort hidden directories before hidden files, and visible directories before
-visible files. 
+Sort directories before other file types.
+.It Fl -group-dots-extra-first
+Always sort hidden directories and files before visible directories and files,
+even when directories are otherwise grouped first.
 .It Fl -color Ns = Ns Ar when
 Output colored escape sequences based on
 .Ar when ,

@@ -118,13 +118,15 @@ static void	 traverse(int, char **, int);
 
 #define	COLOR_OPT	(CHAR_MAX + 1)
 
-#define DIRFIRST_OPT  -850 // BSD
+#define DIRFIRST_OPT      -850 // BSD
+#define DOTXTRAFIRST_OPT  -437 // Related to 850 (code page nerd joke)
 static const struct option long_opts[] =
 {
 #ifdef COLORLS
         {"color",       optional_argument,      NULL, COLOR_OPT},
 #endif
         {"group-directories-first", no_argument, NULL, DIRFIRST_OPT},
+        {"group-dots-extra-first", no_argument,  NULL, DOTXTRAFIRST_OPT},
         {NULL,          no_argument,            NULL, 0}
 };
 
@@ -157,6 +159,7 @@ static int f_nosort;		/* don't sort output */
        int f_octal_escape;	/* like f_octal but use C escapes if possible */
 static int f_recursive;		/* ls subdirectories also */
 static int f_reversesort;	/* reverse whatever sort is used */
+static int f_sortdotxtra1st;/* sort by dottedness very-first */
 static int f_sortdir1st;	/* sort directories first */
        int f_samesort;		/* sort time and name in same direction */
        int f_sectime;		/* print full time information */
@@ -559,6 +562,9 @@ main(int argc, char *argv[])
 		case DIRFIRST_OPT:
 			f_sortdir1st = 1;
 			break;
+        case DOTXTRAFIRST_OPT:
+            f_sortdotxtra1st = 1;
+            break;
 		default:
 		case '?':
 			usage();
@@ -1230,7 +1236,6 @@ static int
 mastercmp(const FTSENT **a, const FTSENT **b)
 {
 	int a_info, b_info;
-	int samedottedness;
 
 	// Try to get file entry info. On error --> treat as equal list order.
 	a_info = (*a)->fts_info;
@@ -1252,25 +1257,21 @@ mastercmp(const FTSENT **a, const FTSENT **b)
 			return (-1);
 	}
 
-	// ADDED: Sort directories first
+    // Always show dot-type entries (. and ..) VERY VERY first
 	if (a_info == FTS_DOT && b_info != FTS_DOT) return -1;
 	if (a_info != FTS_DOT && b_info == FTS_DOT) return 1;
 
-	if      ((*a)->fts_name[0] != '.' && (*b)->fts_name[0] != '.')
-		samedottedness = 1;
-	else if ((*a)->fts_name[0] == '.' && (*b)->fts_name[0] == '.')
-		samedottedness = 1;
-	else
-		samedottedness = 0;
+    // ADDED: Sort by dottedness extra-first
+    if (f_sortdotxtra1st) {
+        if ((*a)->fts_name[0] == '.' && (*b)->fts_name[0] != '.') return -1;
+        if ((*a)->fts_name[0] != '.' && (*b)->fts_name[0] == '.') return 1;
+    }
 
+	// ADDED: Sort directories first
 	if (f_sortdir1st) {
-		if (a_info == FTS_D && b_info != FTS_D && (samedottedness)) {
-			return (-1);
-		}
-		if (b_info == FTS_D && a_info != FTS_D && (samedottedness)) {
-			return (1);
-		}
-	}
+		if (a_info == FTS_D && b_info != FTS_D) return -1;
+		if (a_info != FTS_D && b_info == FTS_D) return 1;
+    }
 
 	return (sortfcn(*a, *b));
 }
